@@ -50,6 +50,9 @@ def compare_gathers(first, second, drop_cols=None, check_types=True, check_heade
     assert len(first_headers) == len(second_headers)
     if not check_headers_dtypes:
         second_headers = second_headers.astype(first_headers.dtypes)
+        print(first_headers.dtypes)
+        print(second_headers.dtypes)
+        
     if len(first_headers) > 0:
         assert first_headers.equals(second_headers)
 
