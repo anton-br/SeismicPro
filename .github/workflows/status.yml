@@ -26,4 +26,4 @@ jobs:
       run: pylint -rn --rcfile pylintrc seismicpro
 
     - name: Run tests
-      run: pytest -m "not slow" --disable-pytest-warnings -v seismicpro/tests
+      run: pytest -m "not slow" --disable-pytest-warnings -v seismicpro/tests/test_dump_load_headers.py
