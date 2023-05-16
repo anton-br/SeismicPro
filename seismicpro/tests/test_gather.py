@@ -34,7 +34,7 @@ def gather(survey):
     return survey.get_gather((0, 0))
 
 
-def compare_gathers(first, second, drop_cols=None, check_types=False, same_survey=True):
+def compare_gathers(first, second, drop_cols=None, check_types=True, same_survey=True):
     """compare_gathers"""
     first_attrs = first.__dict__
     second_attrs = second.__dict__

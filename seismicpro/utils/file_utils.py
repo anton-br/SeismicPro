@@ -5,7 +5,10 @@ import glob
 
 import segyio
 import numpy as np
+import pandas as pd
+import polars as pl
 from tqdm.auto import tqdm
+from pandas.api.types import is_float_dtype
 
 from .general_utils import to_list
 
@@ -87,6 +90,77 @@ def aggregate_segys(in_paths, out_path, recursive=False, mmap=False, keep_exts=(
     if delete_in_files:
         for path in in_paths:
             os.remove(path)
+
+
+def read_dataframe(path, columns=None, format="fwf", has_header=False, usecols=None, sep=',', skiprows=0, decimal=None,
+                   encoding="UTF-8", **kwargs):
+    """Read a file into a `pd.DataFrame`. See :func:`TraceContainer.load_headers` for arguments description."""
+    if usecols is not None or decimal is None:
+        with open(path, 'r', encoding=encoding) as f:
+            n_skip = 1 + has_header + skiprows
+            row = [next(f) for _ in range(n_skip)][-1]
+        # If decimal is not provided, try inferring it from the file
+        if decimal is None:
+            decimal = '.' if '.' in row else ','
+        if usecols is not None:
+            usecols_sep = sep if format == "csv" else None
+            # Avoid negative values in `usecols`
+            usecols = np.arange(len(row.split(usecols_sep)))[usecols]
+            if np.any(usecols[:-1] > usecols[1:]):
+                raise ValueError("`usecols` should be sorted in ascending order.")
+            usecols = usecols.tolist()
+
+    if format == "fwf":
+        header = 0 if has_header else None
+        return pd.read_csv(path, sep=r'\s+', header=header, names=columns, usecols=usecols, decimal=decimal,
+                           skiprows=skiprows, encoding=encoding, **kwargs)
+    if format == "csv":
+        columns, new_columns = (columns, None) if has_header else (usecols, columns)
+        return pl.read_csv(path, has_header=has_header, columns=columns, new_columns=new_columns, separator=sep,
+                           skip_rows=skiprows, encoding=encoding, **kwargs).to_pandas()
+    raise ValueError(f"Unknown format `{format}`, available formats are ('fwf', 'csv')")
+
+
+def dump_dataframe(path, df, format="fwf", has_header=False, float_precision=2, decimal=".", min_width=None,
+                   **kwargs):
+    """Save a provided `pd.DataFrame` to a file. See :func:`TraceContainer.dump_headers` for arguments description."""
+    if format == "fwf":
+        _dump_to_fwf(path, df, has_header=has_header, float_precision=float_precision, decimal=decimal,
+                     min_width=min_width)
+    elif format == "csv":
+        df = pl.from_pandas(df)
+        df.write_csv(path, has_header=has_header, float_precision=float_precision, **kwargs)
+    else:
+        raise ValueError(f"Unknown format `{format}`, available formats are ('fwf', 'csv')")
+
+
+def _dump_to_fwf(path, df, has_header, float_precision, decimal, min_width=None):
+    def format_float(col, n):
+        """Clip all floats to the same amount of fractional numbers and pad with zeros where needed."""
+        round_col = pl.col(col).round(n).abs()
+        int_part = round_col.floor().cast(int)
+        # Converting fractional numbers to int by raising it to a power of `n` and padding with zeros if needed
+        frac_part = ((round_col - int_part) * pl.lit(10)**n).round(0).cast(int).cast(str).str.rjust(n, "0")
+        str_num = pl.concat_str([int_part.cast(str), frac_part], separator=decimal)
+        # Restoring the sign of numbers
+        return pl.when(pl.col(col) < 0).then("-" + str_num).otherwise(str_num).alias(col)
+
+    columns = df.columns
+    is_float_cols = [is_float_dtype(t) for t in df.dtypes]
+    df = pl.from_pandas(df)
+    str_df = df.select([format_float(col, float_precision) if is_float else pl.col(col).cast(str)
+                        for col, is_float in zip(columns, is_float_cols)])
+    col_lens = str_df.select(pl.all().str.lengths().max()).row(0)
+    if has_header:
+        col_lens = np.maximum(col_lens, [len(column) for column in columns])
+    if min_width is not None:
+        col_lens = np.maximum(col_lens, min_width)
+    col_names = " ".join(col.rjust(n, " ") for col, n in zip(str_df.columns, col_lens))
+    str_col = str_df.select(pl.concat_str([pl.col(col).str.rjust(n, " ") for col, n in zip(columns, col_lens)],
+                                          separator=" ").alias(col_names))
+    # Avoid matching decimal and separator to achieve an unambiguous reading
+    separator = "," if decimal == "." else "."
+    str_col.write_csv(path, has_header=has_header, separator=separator)
 
 
 # pylint: disable=too-many-arguments, invalid-name
