@@ -57,10 +57,10 @@ def dump_load_headers(tmp_path, container_to_dump, container_to_load, headers_to
     original, loaded = containers
 
     for column in new_cols:
-        if "floats" in column:
-            # Check that loaded floating numbers differ by no more than the number of rounded characters
-            assert np.max(np.abs(original[column] - loaded[column])) <= 10**(-float_precision)
-            original.headers[column] = loaded[column] # Avoid round errors
+        # Check that loaded floating numbers differ by no more than the number of rounded characters
+        assert np.max(np.abs(original[column] - loaded[column])) <= 10**(-float_precision)
+        original.headers[column] = loaded[column] # Avoid round errors
+        original.headers[column] = original.headers[column].astype(loaded[column].dtypes)
     assert_kwargs = {} if assert_kwargs is None else assert_kwargs
     assert_func(original, loaded, **assert_kwargs)
 
